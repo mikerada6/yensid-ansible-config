@@ -58,6 +58,14 @@
         group: "{{ app_group }}"
         mode: '0755'
 
+    - name: Create log directory for Spring Boot application
+      ansible.builtin.file:
+        path: "/var/log/{{ app_user }}" # This will be /var/log/configsrv
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0750' # Owner rwx, group rx, others no access
+
     - name: Template Spring Boot systemd service file
       ansible.builtin.template:
         src: ../templates/spring-boot-config-server.service.j2 # Ensure this has --spring.config.additional-location
