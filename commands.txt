@@ -1,1 +1,3 @@
 ansible-playbook playbooks/setup_yensid.yml
+
+ansible-playbook -i inventory.ini playbooks/bootstrap.yml -kK

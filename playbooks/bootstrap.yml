@@ -1,43 +1,42 @@
 ---
-- name: Bootstrap fantasyland-dev with ansible user
+- name: Bootstrap remote hosts with a dedicated control user
   hosts: bootstrap
   become: yes
   vars:
-    # adjust if your pubkey lives elsewhere
-    ansible_key_path: "~/.ssh/fantasyland_dev_ansible.pub"
+    ssh_dir: "/home/{{ bootstrap_user }}/.ssh"
 
   tasks:
-    - name: Ensure 'ansible' group exists
+    - name: Ensure group '{{ bootstrap_group }}' exists
       ansible.builtin.group:
-        name: ansible
+        name: "{{ bootstrap_group }}"
         state: present
 
-    - name: Create 'ansible' user
+    - name: Create user '{{ bootstrap_user }}'
       ansible.builtin.user:
-        name: ansible
-        group: ansible
-        shell: /bin/bash
+        name: "{{ bootstrap_user }}"
+        group: "{{ bootstrap_group }}"
+        shell: "{{ bootstrap_shell }}"
         create_home: yes
+        state: present
 
-    - name: Create .ssh directory
+    - name: Ensure {{ ssh_dir }} is present
       ansible.builtin.file:
-        path: /home/ansible/.ssh
+        path: "{{ ssh_dir }}"
         state: directory
-        owner: ansible
-        group: ansible
+        owner: "{{ bootstrap_user }}"
+        group: "{{ bootstrap_group }}"
         mode: '0700'
 
-    - name: Install public key for ansible user
+    - name: Install public key for '{{ bootstrap_user }}'
       ansible.posix.authorized_key:
-        user: ansible
-        key: "{{ lookup('file', ansible_key_path) }}"
+        user: "{{ bootstrap_user }}"
+        key: "{{ lookup('file', bootstrap_public_key) }}"
         state: present
 
-    - name: Grant ansible user passwordless sudo
+    - name: Grant '{{ bootstrap_user }}' passwordless sudo
       ansible.builtin.copy:
-        dest: /etc/sudoers.d/ansible
-        content: |
-          ansible ALL=(ALL) NOPASSWD: ALL
+        dest: "/etc/sudoers.d/{{ bootstrap_user }}"
+        content: "{{ bootstrap_user }} ALL=(ALL) NOPASSWD:ALL"
         owner: root
         group: root
         mode: '0440'
