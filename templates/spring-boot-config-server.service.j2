@@ -9,7 +9,8 @@ Restart=always
 RestartSec=1
 User={{ app_user }}
 Group={{ app_group }}
-ExecStart=/usr/bin/java -Dspring.profiles.active=composite -Ddebug -jar /opt/spring-boot-config-server/my-config-server.jar --server.port=8888 --spring.config.additional-location=file:/opt/spring-boot-config-server/application-dynamic.properties
+ExecStart=/usr/bin/java -Dlogging.file.path=/var/log/configsrv -Dspring.profiles.active=composite -jar /opt/spring-boot-config-server/my-config-server.jar --server.port=8888 --spring.config.additional-location=file:/opt/spring-boot-config-server/application-dynamic.properties
+
 
 [Install]
 WantedBy=multi-user.target
