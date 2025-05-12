@@ -165,6 +165,8 @@
         key: "{{ jenkins_yensid_deployer_ssh_public_key_content }}"
         exclusive: no # Set to yes if this should be the ONLY key
 
+    # Section 3: Jenkins Deployment User Setup
+    # ... (user and key setup) ...
     - name: Configure passwordless sudo for Jenkins deployer user (specific commands)
       ansible.builtin.lineinfile:
         path: /etc/sudoers.d/95-yensid-deployer
@@ -179,14 +181,14 @@
         - "/usr/bin/systemctl start spring-boot-config-server"
         - "/usr/bin/systemctl daemon-reload"
         - "/usr/bin/systemctl status spring-boot-config-server"
-        # Ensure variables are correctly expanded and strings are clean
         - "/usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}"
         - "/usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties"
-        # Let's construct the chown command string very carefully
-        - "/usr/bin/chown {{ app_user }}:{{ app_group }} {{ app_dir }}/{{ app_jar_name }}"
-        - "/usr/bin/chown {{ app_user }}:{{ app_group }} {{ app_dir }}/application-dynamic.properties"
+        # Allow chown -R for the specific user:group on the app_dir
+        - "/usr/bin/chown -R {{ app_user }}:{{ app_group }} {{ app_dir }}"
+        # The chmod commands are fine as they are specific files
         - "/usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}"
         - "/usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties"
+
 
     # Section 4: Firewall Configuration
     - name: Allow SSH
