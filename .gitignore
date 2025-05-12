@@ -1,0 +1,27 @@
+# Ansible Vault password file (VERY IMPORTANT!)
+.ansible_vault_password
+*.vault # If you name your vault password file something like this
+
+# Temporary Ansible files
+*.retry
+*.log
+
+# Python virtual environments (if you ever create one inside the project)
+venv/
+*.pyc
+__pycache__/
+
+# IDE/Editor specific files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Any local configuration overrides you don't want to share
+# local_vars.yml
+
+# Downloaded Galaxy roles/collections if stored directly in project and you prefer to manage via requirements.yml
+# roles/downloaded_roles/*
+# collections/ansible_collections/*
+# (Usually, collections are installed globally or per-user, not in the project)

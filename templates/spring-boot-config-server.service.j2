@@ -1,0 +1,21 @@
+[Unit]
+Description=Spring Boot Config Server
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User={{ app_user }}
+Group={{ app_group }}
+ExecStart=/usr/bin/java -jar {{ app_dir }}/{{ app_jar_name }} --server.port={{ app_port }}
+# Add any other Spring Boot properties here, e.g.:
+# ExecStart=/usr/bin/java -jar {{ app_dir }}/{{ app_jar_name }} --server.port={{ app_port }} --spring.profiles.active=native --spring.cloud.config.server.native.search-locations=file:///path/to/your/config/repo
+
+# StandardOutput=syslog # Uncomment to send stdout to syslog
+# StandardError=syslog  # Uncomment to send stderr to syslog
+# SyslogIdentifier=springbootconfigserver # Used with syslog output
+
+[Install]
+WantedBy=multi-user.target
