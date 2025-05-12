@@ -167,27 +167,26 @@
 
     # Section 3: Jenkins Deployment User Setup
     # ... (user and key setup) ...
-    - name: Configure passwordless sudo for Jenkins deployer user (specific commands)
-      ansible.builtin.lineinfile:
+    - name: Configure passwordless sudo for Jenkins deployer user
+      ansible.builtin.blockinfile:
         path: /etc/sudoers.d/95-yensid-deployer
-        line: "{{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: {{ item }}"
         create: yes
         owner: root
         group: root
         mode: '0440'
         validate: /usr/sbin/visudo -cf %s
-      loop:
-        - "/usr/bin/systemctl stop spring-boot-config-server"
-        - "/usr/bin/systemctl start spring-boot-config-server"
-        - "/usr/bin/systemctl daemon-reload"
-        - "/usr/bin/systemctl status spring-boot-config-server"
-        - "/usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}"
-        - "/usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties"
-        # Allow chown -R for the specific user:group on the app_dir
-        - "/usr/bin/chown -R {{ app_user }}:{{ app_group }} {{ app_dir }}"
-        # The chmod commands are fine as they are specific files
-        - "/usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}"
-        - "/usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties"
+        block: |
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop spring-boot-config-server
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start spring-boot-config-server
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl status spring-boot-config-server
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties
+          # Using the simplified chown rule here:
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties
+
 
 
     # Section 4: Firewall Configuration
