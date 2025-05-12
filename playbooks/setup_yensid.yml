@@ -18,7 +18,7 @@
 
     jenkins_deployer_user: yensid_deployer
     jenkins_deployer_group: yensid_deployer
-    jenkins_yensid_deployer_ssh_public_key_content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK202otrg4n8M8kN5iFIrrfeDPbK3bEOtb9b5WNjIbeC jenkins_yensid_deployer@yensid"
+    jenkins_yensid_deployer_ssh_public_key_content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74CwnKGyPoTUq jenkins_yensid_deployer@yensid"
 
   tasks:
     - name: Update apt cache
