@@ -47,7 +47,7 @@
         name: "{{ app_user }}"
         group: "{{ app_group }}"
         shell: /bin/false # No login for service account
-        create_home: false
+        create_home: yes
         state: present
 
     - name: Create application directory for Spring Boot
@@ -57,6 +57,7 @@
         owner: "{{ app_user }}" # Ansible ensures this user/group owns the dir
         group: "{{ app_group }}"
         mode: '0755'
+
 
     - name: Create log directory for Spring Boot application
       ansible.builtin.file:
