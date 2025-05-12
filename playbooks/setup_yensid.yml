@@ -172,8 +172,8 @@
         create: yes
         owner: root
         group: root
-        mode: '0440' # Secure permissions for sudoers files
-        validate: /usr/sbin/visudo -cf %s # Validate sudoers file syntax
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
       loop:
         - /usr/bin/systemctl stop spring-boot-config-server
         - /usr/bin/systemctl start spring-boot-config-server
@@ -181,12 +181,13 @@
         - /usr/bin/systemctl status spring-boot-config-server
         - /usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}
         - /usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties
-        - /usr/bin/chown {{ app_user }}:{{ app_group }} {{ app_dir }}/*
+        # Specific chown rules for the files Jenkins will manage:
+        - /usr/bin/chown {{ app_user }}:{{ app_group }} {{ app_dir }}/{{ app_jar_name }}
+        - /usr/bin/chown {{ app_user }}:{{ app_group }} {{ app_dir }}/application-dynamic.properties
+        # If Jenkins might create other files and chown them, you'd need a more general rule or add them here.
+        # For now, these are the two files Jenkins explicitly chowns after copying/moving.
         - /usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}
         - /usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties
-        # Add other commands if needed, e.g., for cleanup on Yensid:
-        # - /usr/bin/rm -f /tmp/config-server-*.jar
-        # - /usr/bin/rm -f /tmp/application-dynamic.properties.tmp
 
     # Section 4: Firewall Configuration
     - name: Allow SSH
