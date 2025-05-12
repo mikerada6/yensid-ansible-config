@@ -18,6 +18,7 @@
 
     jenkins_deployer_user: yensid_deployer
     jenkins_deployer_group: yensid_deployer
+    # UPDATED PUBLIC KEY:
     jenkins_yensid_deployer_ssh_public_key_content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74CwnKGyPoTUq jenkins_yensid_deployer@yensid"
 
   tasks:
@@ -53,7 +54,7 @@
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
-        owner: "{{ app_user }}"
+        owner: "{{ app_user }}" # Ansible ensures this user/group owns the dir
         group: "{{ app_group }}"
         mode: '0755'
 
@@ -64,7 +65,7 @@
         owner: root
         group: root
         mode: '0644'
-      notify: Reload systemd for config server # Changed handler name for clarity
+      notify: Reload systemd for config server
 
     - name: Ensure Spring Boot config server service is enabled
       ansible.builtin.systemd:
@@ -114,7 +115,7 @@
         group: root
         mode: '0755'
         remote_src: yes
-      notify: Restart node_exporter # Simple restart handler
+      notify: Restart node_exporter
 
     - name: Template Node Exporter systemd service file
       ansible.builtin.template:
@@ -163,37 +164,36 @@
         user: "{{ jenkins_deployer_user }}"
         state: present
         key: "{{ jenkins_yensid_deployer_ssh_public_key_content }}"
-        exclusive: no # Set to yes if this should be the ONLY key
+        exclusive: no
 
-    # Section 3: Jenkins Deployment User Setup
-    # ... (user and key setup) ...
-    - name: Configure passwordless sudo for Jenkins deployer user
-      ansible.builtin.blockinfile:
+    - name: Configure passwordless sudo for Jenkins deployer user (specific commands)
+      ansible.builtin.lineinfile:
         path: /etc/sudoers.d/95-yensid-deployer
+        line: "{{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: {{ item }}"
         create: yes
         owner: root
         group: root
         mode: '0440'
         validate: /usr/sbin/visudo -cf %s
-        block: |
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop spring-boot-config-server
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start spring-boot-config-server
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/systemctl status spring-boot-config-server
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties
-          # Using the simplified chown rule here:
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}
-          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: /usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties
-
-
+      loop:
+        - "/usr/bin/systemctl stop spring-boot-config-server"
+        - "/usr/bin/systemctl start spring-boot-config-server"
+        - "/usr/bin/systemctl daemon-reload"
+        - "/usr/bin/systemctl status spring-boot-config-server"
+        - "/usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}"
+        - "/usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties"
+        - "/usr/bin/chown"  # Generic chown, Jenkins pipeline will supply arguments like -R user:group /path
+        - "/usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}"
+        - "/usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties"
+        - "/usr/bin/mkdir" # Allows mkdir with any arguments (like -p)
+        # Add other commands if needed by Jenkins deployment script:
+        # - "/usr/bin/rm" # If Jenkins needs to sudo rm files from /tmp on Yensid
 
     # Section 4: Firewall Configuration
     - name: Allow SSH
       community.general.ufw:
         rule: allow
-        name: OpenSSH # Uses the UFW application profile for SSH
+        name: OpenSSH
         state: enabled
 
     - name: Allow Spring Boot Config Server port
@@ -213,14 +213,13 @@
     - name: Enable UFW
       community.general.ufw:
         state: enabled
-        # policy: deny # Optional: set default policy if not already set
 
   handlers:
-    - name: Reload systemd for config server # Renamed for clarity
-      listen: Reload systemd and restart config server # Old name still works if used by notify
+    - name: Reload systemd for config server
+      listen: Reload systemd and restart config server # Handles old notify name too
       ansible.builtin.systemd:
         name: spring-boot-config-server
-        state: restarted # This will restart if notified. If you only want daemon-reload, change state.
+        state: restarted # This will restart if notified.
         daemon_reload: yes
 
     - name: Reload systemd and restart node_exporter
@@ -229,7 +228,7 @@
         state: restarted
         daemon_reload: yes
 
-    - name: Restart node_exporter # Simpler handler if only restart is needed by copy task
+    - name: Restart node_exporter
       ansible.builtin.systemd:
         name: node_exporter
         state: restarted
