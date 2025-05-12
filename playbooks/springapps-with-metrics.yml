@@ -1,0 +1,227 @@
+---
+# playbooks/springapps-with-metrics.yml
+- name: Provision Spring-Boot Hosts & Metrics
+  hosts: springapps
+  become: true
+
+  vars:
+    java_package_name: openjdk-17-jdk
+    app_user: springapp
+    app_group: springapp
+
+    # single microservice
+    spring_apps:
+      - name: bulk-data-watcher
+        jar_name: bulk-data-watcher.jar
+        port: 8081
+
+    # Jenkins deployer
+    jenkins_deployer_user: yensid_deployer
+    jenkins_deployer_group: yensid_deployer
+    jenkins_ssh_key: |
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74
+      CwnKGyPoTUq jenkins_yensid_deployer@yensid
+
+    # Node Exporter settings
+    node_exporter_version: "1.7.0"
+    node_exporter_user: node_exporter
+    node_exporter_group: node_exporter
+    node_exporter_port: 9100
+    node_exporter_download_url: >
+      https://github.com/prometheus/node_exporter/releases/
+      download/v{{ node_exporter_version }}/
+      node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+      changed_when: false
+
+    - name: Install Java, UFW, tar, sudo
+      ansible.builtin.apt:
+        name:
+          - "{{ java_package_name }}"
+          - ufw
+          - tar
+          - sudo
+        state: present
+
+    # --- App infra ---
+    - name: Ensure application group exists
+      ansible.builtin.group:
+        name: "{{ app_group }}"
+
+    - name: Ensure application user exists
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    # --- Jenkins deployer ---
+    - name: Ensure Jenkins deployer group exists
+      ansible.builtin.group:
+        name: "{{ jenkins_deployer_group }}"
+
+    - name: Ensure Jenkins deployer user exists
+      ansible.builtin.user:
+        name: "{{ jenkins_deployer_user }}"
+        group: "{{ jenkins_deployer_group }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Install Jenkins deployer SSH key
+      ansible.posix.authorized_key:
+        user: "{{ jenkins_deployer_user }}"
+        key: "{{ jenkins_ssh_key }}"
+
+    - name: Grant Jenkins deployer passwordless sudo for deploy
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/95-jenkins-deployer
+        create: yes
+        owner: root
+        group: root
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+        line: "{{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: {{ item }}"
+      loop:
+        - "/usr/bin/mv /tmp/{{ item.jar_name }} /opt/{{ item.name }}/{{ item.jar_name }}"
+        - "/usr/bin/systemctl daemon-reload"
+        - "/usr/bin/systemctl restart {{ item.name }}"
+        - "/usr/bin/systemctl status {{ item.name }}"
+        - "/usr/bin/mkdir"
+        - "/usr/bin/chown"
+        - "/usr/bin/chmod"
+      loop_control:
+        loop_var: item
+
+    # --- Firewall: SSH + app + metrics ---
+    - name: Allow SSH in UFW
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+        state: enabled
+
+    - name: Allow app port(s) in UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: tcp
+        state: enabled
+      loop: "{{ spring_apps }}"
+
+    - name: Allow Node Exporter port in UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ node_exporter_port }}"
+        proto: tcp
+        state: enabled
+
+    - name: Ensure UFW is enabled
+      community.general.ufw:
+        state: enabled
+
+    # --- Deploy the bulk-data-watcher service ---
+    - name: Provision microservice directories & service
+      ansible.builtin.block:
+        - name: Create application directory
+          ansible.builtin.file:
+            path: "/opt/{{ item.name }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0755'
+
+        - name: Create log directory
+          ansible.builtin.file:
+            path: "/var/log/{{ item.name }}"
+            state: directory
+            owner: "{{ app_user }}"
+            group: "{{ app_group }}"
+            mode: '0750'
+
+        - name: Deploy systemd unit for {{ item.name }}
+          ansible.builtin.template:
+            src: spring-app.service.j2
+            dest: "/etc/systemd/system/{{ item.name }}.service"
+            mode: '0644'
+          vars:
+            svc_name: "{{ item.name }}"
+            jar_name: "{{ item.jar_name }}"
+            svc_port: "{{ item.port }}"
+          notify:
+            - "daemon-reload-and-restart {{ item.name }}"
+
+        - name: Enable {{ item.name }} service
+          ansible.builtin.systemd:
+            name: "{{ item.name }}"
+            enabled: yes
+      loop: "{{ spring_apps }}"
+      loop_control:
+        loop_var: item
+
+    # --- Install Prometheus Node Exporter ---
+    - name: Ensure node_exporter group exists
+      ansible.builtin.group:
+        name: "{{ node_exporter_group }}"
+
+    - name: Ensure node_exporter user exists
+      ansible.builtin.user:
+        name: "{{ node_exporter_user }}"
+        group: "{{ node_exporter_group }}"
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    - name: Download Node Exporter archive
+      ansible.builtin.get_url:
+        url: "{{ node_exporter_download_url }}"
+        dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+
+    - name: Unarchive Node Exporter
+      ansible.builtin.unarchive:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install Node Exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+
+    - name: Deploy node_exporter systemd unit
+      ansible.builtin.template:
+        src: node_exporter.service.j2
+        dest: /etc/systemd/system/node_exporter.service
+        mode: '0644'
+      notify:
+        - daemon-reload-and-restart node_exporter
+
+    - name: Enable & start node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Cleanup Node Exporter tmp files
+      ansible.builtin.file:
+        path: "/tmp/node_exporter-{{ node_exporter_version }}*"
+        state: absent
+        recurse: yes
+
+  handlers:
+    - name: daemon-reload-and-restart {{ svc_name }}
+      ansible.builtin.systemd:
+        name: "{{ svc_name }}"
+        state: restarted
+        daemon_reload: yes
+
+    - name: daemon-reload-and-restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+        daemon_reload: yes

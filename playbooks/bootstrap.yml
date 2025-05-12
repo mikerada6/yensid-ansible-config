@@ -1,0 +1,43 @@
+---
+- name: Bootstrap fantasyland-dev with ansible user
+  hosts: bootstrap
+  become: yes
+  vars:
+    # adjust if your pubkey lives elsewhere
+    ansible_key_path: "~/.ssh/fantasyland_dev_ansible.pub"
+
+  tasks:
+    - name: Ensure 'ansible' group exists
+      ansible.builtin.group:
+        name: ansible
+        state: present
+
+    - name: Create 'ansible' user
+      ansible.builtin.user:
+        name: ansible
+        group: ansible
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Create .ssh directory
+      ansible.builtin.file:
+        path: /home/ansible/.ssh
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: '0700'
+
+    - name: Install public key for ansible user
+      ansible.posix.authorized_key:
+        user: ansible
+        key: "{{ lookup('file', ansible_key_path) }}"
+        state: present
+
+    - name: Grant ansible user passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/ansible
+        content: |
+          ansible ALL=(ALL) NOPASSWD: ALL
+        owner: root
+        group: root
+        mode: '0440'
