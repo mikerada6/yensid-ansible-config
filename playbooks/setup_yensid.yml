@@ -1,6 +1,6 @@
 ---
 - name: Configure Yensid Server
-  hosts: yensid_target # Make sure this matches your inventory (e.g., localhost for Yensid itself)
+  hosts: yensid_server # Make sure this matches your inventory (e.g., localhost for Yensid itself)
   become: true
   vars:
     java_package_name: openjdk-17-jdk
