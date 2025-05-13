@@ -9,6 +9,7 @@
     - name: Ensure group '{{ bootstrap_group }}' exists
       ansible.builtin.group:
         name: "{{ bootstrap_group }}"
+        state: present
 
     - name: Create user '{{ bootstrap_user }}'
       ansible.builtin.user:
@@ -29,29 +30,32 @@
       ansible.posix.authorized_key:
         user: "{{ bootstrap_user }}"
         key: "{{ lookup('file', bootstrap_public_key) }}"
+        state: present
 
     - name: Grant '{{ bootstrap_user }}' passwordless sudo
       ansible.builtin.copy:
         dest: "/etc/sudoers.d/{{ bootstrap_user }}"
         content: "{{ bootstrap_user }} ALL=(ALL) NOPASSWD:ALL"
+        owner: root
+        group: root
         mode: '0440'
 
-- name: Configure Yensid Server
+- name: Configure Yensid Server as Config Server + Node Exporter + Jenkins Deployer
   hosts: yensid_server
-  become: true
+  become: yes
   vars:
     java_package_name: openjdk-17-jdk
     app_user: configsrv
     app_group: configsrv
     app_dir: /opt/spring-boot-config-server
-    app_jar_name: "my-config-server.jar"
+    app_jar_name: my-config-server.jar
     app_port: 8888
 
     node_exporter_version: "1.7.0"
     node_exporter_user: node_exporter
     node_exporter_group: node_exporter
     node_exporter_port: 9100
-    node_exporter_download_url: >
+    node_exporter_download_url: >-
       https://github.com/prometheus/node_exporter/releases/
       download/v{{ node_exporter_version }}/
       node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
@@ -59,8 +63,8 @@
     jenkins_deployer_user: yensid_deployer
     jenkins_deployer_group: yensid_deployer
     jenkins_yensid_deployer_ssh_public_key_content: |
-      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74
-      CwnKGyPoTUq jenkins_yensid_deployer@yensid
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+
+      FrC21IyClSWq6uf74CwnKGyPoTUq jenkins_yensid_deployer@yensid
 
   tasks:
     - name: Update apt cache
@@ -76,8 +80,8 @@
           - sudo
         state: present
 
-    # -------- Spring Boot Config Server --------
-    - group: Create group for config server
+    # Spring Boot Config Server
+    - name: Create group for config server
       ansible.builtin.group:
         name: "{{ app_group }}"
 
@@ -88,7 +92,7 @@
         shell: /bin/false
         create_home: yes
 
-    - name: Create app dir
+    - name: Create application directory
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
@@ -96,7 +100,7 @@
         group: "{{ app_group }}"
         mode: '0755'
 
-    - name: Create log dir
+    - name: Create log directory
       ansible.builtin.file:
         path: "/var/log/{{ app_user }}"
         state: directory
@@ -104,32 +108,33 @@
         group: "{{ app_group }}"
         mode: '0750'
 
-    - name: Deploy config‐server systemd unit
+    - name: Deploy Config Server systemd unit
       ansible.builtin.template:
         src: ../templates/spring-boot-config-server.service.j2
         dest: /etc/systemd/system/spring-boot-config-server.service
         mode: '0644'
       notify: Reload systemd for config server
 
-    - name: Enable config‐server
+    - name: Enable Config Server service
       ansible.builtin.systemd:
         name: spring-boot-config-server
         enabled: yes
         daemon_reload: yes
 
-    # -------- Node Exporter --------
-    - name: Create group for Node Exporter
+    # Prometheus Node Exporter
+    - name: Create group for node_exporter
       ansible.builtin.group:
         name: "{{ node_exporter_group }}"
 
-    - name: Create user for Node Exporter
+    - name: Create user for node_exporter
       ansible.builtin.user:
         name: "{{ node_exporter_user }}"
         group: "{{ node_exporter_group }}"
         shell: /bin/false
         system: yes
+        create_home: no
 
-    - name: Download Node Exporter
+    - name: Download Node Exporter archive
       ansible.builtin.get_url:
         url: "{{ node_exporter_download_url }}"
         dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
@@ -146,7 +151,7 @@
         dest: /usr/local/bin/node_exporter
         mode: '0755'
 
-    - name: Deploy node_exporter unit
+    - name: Deploy node_exporter systemd unit
       ansible.builtin.template:
         src: ../templates/node_exporter.service.j2
         dest: /etc/systemd/system/node_exporter.service
@@ -160,14 +165,14 @@
         state: started
         daemon_reload: yes
 
-    - name: Cleanup Node Exporter temp
+    - name: Clean up Node Exporter tmp files
       ansible.builtin.file:
         path: "/tmp/node_exporter-{{ node_exporter_version }}*"
         state: absent
         recurse: yes
 
-    # -------- Jenkins Deployer --------
-    - name: Create Jenkins deployer group
+    # Jenkins Deployer User
+    - name: Create group for Jenkins deployer
       ansible.builtin.group:
         name: "{{ jenkins_deployer_group }}"
 
@@ -178,36 +183,33 @@
         shell: /bin/bash
         create_home: yes
 
-    - name: Install Jenkins deployer SSH key
+    - name: Install SSH key for Jenkins deployer
       ansible.posix.authorized_key:
         user: "{{ jenkins_deployer_user }}"
         key: "{{ jenkins_yensid_deployer_ssh_public_key_content }}"
 
-    - name: Grant Jenkins deployer NOPASSWD sudo
+    - name: Grant Jenkins deployer passwordless sudo
       ansible.builtin.copy:
         dest: /etc/sudoers.d/95-yensid-deployer
         content: |
           {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: \
-            /usr/bin/systemctl, \
-            /usr/bin/mv, \
-            /usr/bin/chown, \
-            /usr/bin/chmod, \
-            /usr/bin/mkdir
+          /usr/bin/systemctl, /usr/bin/mv, /usr/bin/chown, \
+          /usr/bin/chmod, /usr/bin/mkdir
         mode: '0440'
 
-    # -------- Firewall --------
+    # Firewall
     - name: Allow SSH
       community.general.ufw:
         rule: allow
         name: OpenSSH
 
-    - name: Allow config‐server port
+    - name: Allow Config Server port
       community.general.ufw:
         rule: allow
         port: "{{ app_port }}"
         proto: tcp
 
-    - name: Allow node_exporter port
+    - name: Allow Node Exporter port
       community.general.ufw:
         rule: allow
         port: "{{ node_exporter_port }}"
