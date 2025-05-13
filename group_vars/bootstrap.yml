@@ -1,6 +1,5 @@
-# these are the DEFAULTS; override in group_vars/bootstrap.yml or via -e
-bootstrap_user: ansible
-bootstrap_group: ansible
-bootstrap_shell: /bin/bash
-# path on control-node to the PUBLIC key you want installed
+# inventory/group_vars/bootstrap.yml
+bootstrap_user:   ansible
+bootstrap_group:  ansible
+bootstrap_shell:  /bin/bash
 bootstrap_public_key: "{{ lookup('env','HOME') + '/.ssh/fantasyland_dev_ansible.pub' }}"
