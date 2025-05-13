@@ -1,3 +1,4 @@
+# playbooks/springapps-with-metrics.yml
 ---
 - name: Provision Spring-Boot App Hosts & Node Exporter
   hosts: springapps
@@ -8,7 +9,6 @@
     app_user: springapp
     app_group: springapp
 
-    # your one microservice
     spring_apps:
       - name: bulk-data-watcher
         jar_name: bulk-data-watcher.jar
@@ -18,18 +18,14 @@
     jenkins_deployer_user: yensid_deployer
     jenkins_deployer_group: yensid_deployer
     jenkins_yensid_deployer_ssh_public_key_content: >
-      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74CwnKGyPoTUq
-      jenkins_yensid_deployer@yensid
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74CwnKGyPoTUq jenkins_yensid_deployer@yensid
 
     # Node Exporter
     node_exporter_version: "1.7.0"
     node_exporter_user: node_exporter
     node_exporter_group: node_exporter
     node_exporter_port: 9100
-    node_exporter_download_url: >
-      https://github.com/prometheus/node_exporter/releases/download/
-      v{{ node_exporter_version }}/
-      node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+    node_exporter_download_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
 
   tasks:
     - name: Update apt cache
@@ -46,7 +42,7 @@
           - sudo
         state: present
 
-    # Create app user/group
+    # app user/group
     - name: Ensure system group for apps
       ansible.builtin.group:
         name: "{{ app_group }}"
@@ -59,7 +55,7 @@
         system: yes
         create_home: no
 
-    # Create Jenkins deployer user
+    # Jenkins deployer
     - name: Ensure Jenkins deployer group
       ansible.builtin.group:
         name: "{{ jenkins_deployer_group }}"
@@ -85,14 +81,14 @@
           /usr/bin/chmod, /usr/bin/mkdir
         mode: '0440'
 
-    # Firewall: SSH + app ports + exporter
+    # firewall
     - name: Allow SSH in UFW
       community.general.ufw:
         rule: allow
         name: OpenSSH
         state: enabled
 
-    - name: Allow each app port in UFW
+    - name: Allow app ports in UFW
       community.general.ufw:
         rule: allow
         port: "{{ item.port }}"
@@ -111,45 +107,14 @@
       community.general.ufw:
         state: enabled
 
-    # Provision each Spring-Boot app
-    - name: Provision microservice directories & service
-      block:
-        - name: Create application directory
-          ansible.builtin.file:
-            path: "/opt/{{ item.name }}"
-            state: directory
-            owner: "{{ app_user }}"
-            group: "{{ app_group }}"
-            mode: '0755'
-
-        - name: Create log directory
-          ansible.builtin.file:
-            path: "/var/log/{{ item.name }}"
-            state: directory
-            owner: "{{ app_user }}"
-            group: "{{ app_group }}"
-            mode: '0750'
-
-        - name: Deploy systemd unit for {{ item.name }}
-          ansible.builtin.template:
-            src: spring-app.service.j2
-            dest: "/etc/systemd/system/{{ item.name }}.service"
-            mode: '0644'
-          vars:
-            svc_name: "{{ item.name }}"
-            jar_name: "{{ item.jar_name }}"
-            svc_port: "{{ item.port }}"
-          notify: "daemon-reload-and-restart {{ item.name }}"
-
-        - name: Enable {{ item.name }} service
-          ansible.builtin.systemd:
-            name: "{{ item.name }}"
-            enabled: yes
+    # provision each microservice via include_tasks + loop
+    - name: Provision each Spring-Boot app
+      include_tasks: provision-app.yml
       loop: "{{ spring_apps }}"
       loop_control:
-        loop_var: item
+        loop_var: app
 
-    # Install Prometheus Node Exporter
+    # install node_exporter
     - name: Ensure group for node_exporter
       ansible.builtin.group:
         name: "{{ node_exporter_group }}"
