@@ -7,13 +7,10 @@ Type=simple
 User={{ app_user }}
 Group={{ app_group }}
 WorkingDirectory=/opt/{{ svc_name }}
-
-# set Config Server URI as env var, and pass the right profile
 Environment="SPRING_CLOUD_CONFIG_URI={{ config_server_uri }}"
 ExecStart=/usr/bin/java -jar /opt/{{ svc_name }}/{{ jar_name }} \
   --server.port={{ svc_port }} \
   --spring.profiles.active={{ spring_active_profile }}
-
 StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier={{ svc_name }}
