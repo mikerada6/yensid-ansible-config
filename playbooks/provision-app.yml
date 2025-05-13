@@ -20,7 +20,7 @@
 
 - name: Deploy systemd unit for {{ app.name }}
   ansible.builtin.template:
-    src: spring-app.service.j2
+    src: "{{ playbook_dir }}/../templates/spring-app.service.j2"
     dest: "/etc/systemd/system/{{ app.name }}.service"
     mode: '0644'
   vars:
