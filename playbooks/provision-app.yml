@@ -1,22 +1,5 @@
 # playbooks/provision-app.yml
 ---
-# invoked via include_tasks, loop_var=app
-
-- name: Create application directory
-  ansible.builtin.file:
-    path: "/opt/{{ app.name }}"
-    state: directory
-    owner: "{{ app_user }}"
-    group: "{{ app_group }}"
-    mode: '0755'
-
-- name: Create log directory
-  ansible.builtin.file:
-    path: "/var/log/{{ app.name }}"
-    state: directory
-    owner: "{{ app_user }}"
-    group: "{{ app_group }}"
-    mode: '0750'
 
 - name: Deploy systemd unit for {{ app.name }}
   ansible.builtin.template:
@@ -27,7 +10,15 @@
     svc_name: "{{ app.name }}"
     jar_name: "{{ app.jar_name }}"
     svc_port: "{{ app.port }}"
-  notify: "daemon-reload-and-restart {{ app.name }}"
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Restart {{ app.name }}
+  ansible.builtin.systemd:
+    name: "{{ app.name }}"
+    state: restarted
 
 - name: Enable {{ app.name }} service
   ansible.builtin.systemd:
