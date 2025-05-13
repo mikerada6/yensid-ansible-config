@@ -164,8 +164,8 @@
 
     - name: Remove Node Exporter tarball
       ansible.builtin.file:
-      path: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
-      state: absent
+        path: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+        state: absent
 
     - name: Remove Node Exporter extracted folder
       ansible.builtin.file:
