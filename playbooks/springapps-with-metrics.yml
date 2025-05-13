@@ -1,4 +1,3 @@
-# playbooks/springapps-with-metrics.yml
 ---
 - name: Provision Spring-Boot App Hosts & Node Exporter
   hosts: springapps
@@ -107,7 +106,7 @@
       community.general.ufw:
         state: enabled
 
-    # provision each microservice via include_tasks + loop
+    # provision each microservice via include_tasks
     - name: Provision each Spring-Boot app
       include_tasks: provision-app.yml
       loop: "{{ spring_apps }}"
@@ -150,14 +149,20 @@
         src: "{{ playbook_dir }}/../templates/node_exporter.service.j2"
         dest: /etc/systemd/system/node_exporter.service
         mode: '0644'
-      notify: "daemon-reload-and-restart node_exporter"
 
-    - name: Enable & start node_exporter
+    - name: Reload systemd for node_exporter
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Restart node_exporter
+      ansible.builtin.systemd:
+        name: node_exporter
+        state: restarted
+
+    - name: Ensure node_exporter is enabled
       ansible.builtin.systemd:
         name: node_exporter
         enabled: yes
-        state: started
-        daemon_reload: yes
 
     - name: Remove Node Exporter tarball
       ansible.builtin.file:
@@ -168,16 +173,3 @@
       ansible.builtin.file:
         path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
         state: absent
-
-  handlers:
-    - name: "daemon-reload-and-restart {{ svc_name }}"
-      ansible.builtin.systemd:
-        name: "{{ svc_name }}"
-        daemon_reload: yes
-        state: restarted
-
-    - name: "daemon-reload-and-restart node_exporter"
-      ansible.builtin.systemd:
-        name: node_exporter
-        daemon_reload: yes
-        state: restarted
