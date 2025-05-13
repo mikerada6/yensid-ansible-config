@@ -1,33 +1,73 @@
 ---
+- name: Bootstrap remote hosts with a dedicated control user
+  hosts: bootstrap
+  become: yes
+  vars:
+    ssh_dir: "/home/{{ bootstrap_user }}/.ssh"
+
+  tasks:
+    - name: Ensure group '{{ bootstrap_group }}' exists
+      ansible.builtin.group:
+        name: "{{ bootstrap_group }}"
+
+    - name: Create user '{{ bootstrap_user }}'
+      ansible.builtin.user:
+        name: "{{ bootstrap_user }}"
+        group: "{{ bootstrap_group }}"
+        shell: "{{ bootstrap_shell }}"
+        create_home: yes
+
+    - name: Ensure {{ ssh_dir }} is present
+      ansible.builtin.file:
+        path: "{{ ssh_dir }}"
+        state: directory
+        owner: "{{ bootstrap_user }}"
+        group: "{{ bootstrap_group }}"
+        mode: '0700'
+
+    - name: Install public key for '{{ bootstrap_user }}'
+      ansible.posix.authorized_key:
+        user: "{{ bootstrap_user }}"
+        key: "{{ lookup('file', bootstrap_public_key) }}"
+
+    - name: Grant '{{ bootstrap_user }}' passwordless sudo
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ bootstrap_user }}"
+        content: "{{ bootstrap_user }} ALL=(ALL) NOPASSWD:ALL"
+        mode: '0440'
+
 - name: Configure Yensid Server
-  hosts: yensid_server # Make sure this matches your inventory (e.g., localhost for Yensid itself)
+  hosts: yensid_server
   become: true
   vars:
     java_package_name: openjdk-17-jdk
     app_user: configsrv
     app_group: configsrv
     app_dir: /opt/spring-boot-config-server
-    app_jar_name: "my-config-server.jar" # Fixed name Jenkins will deploy as
+    app_jar_name: "my-config-server.jar"
     app_port: 8888
+
     node_exporter_version: "1.7.0"
     node_exporter_user: node_exporter
     node_exporter_group: node_exporter
     node_exporter_port: 9100
-    node_exporter_download_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
-    # node_exporter_checksum: "sha256:c03905950a38cb2dc3006110276407eda005f8501909099933a288f00ac88921" # Checksum removed
+    node_exporter_download_url: >
+      https://github.com/prometheus/node_exporter/releases/
+      download/v{{ node_exporter_version }}/
+      node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
 
     jenkins_deployer_user: yensid_deployer
     jenkins_deployer_group: yensid_deployer
-    # UPDATED PUBLIC KEY:
-    jenkins_yensid_deployer_ssh_public_key_content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74CwnKGyPoTUq jenkins_yensid_deployer@yensid"
+    jenkins_yensid_deployer_ssh_public_key_content: |
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILMl/T2j8nYXws8+FrC21IyClSWq6uf74
+      CwnKGyPoTUq jenkins_yensid_deployer@yensid
 
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: yes
-      changed_when: false
 
-    - name: Install necessary packages (Java, UFW, tar, sudo)
+    - name: Install Java, UFW, tar, sudo
       ansible.builtin.apt:
         name:
           - "{{ java_package_name }}"
@@ -36,129 +76,100 @@
           - sudo
         state: present
 
-    # Section 1: Spring Boot Config Server Setup
-    - name: Create group for Spring Boot application
+    # -------- Spring Boot Config Server --------
+    - group: Create group for config server
       ansible.builtin.group:
         name: "{{ app_group }}"
-        state: present
 
-    - name: Create user for Spring Boot application
+    - name: Create user for config server
       ansible.builtin.user:
         name: "{{ app_user }}"
         group: "{{ app_group }}"
-        shell: /bin/false # No login for service account
+        shell: /bin/false
         create_home: yes
-        state: present
 
-    - name: Create application directory for Spring Boot
+    - name: Create app dir
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
-        owner: "{{ app_user }}" # Ansible ensures this user/group owns the dir
+        owner: "{{ app_user }}"
         group: "{{ app_group }}"
         mode: '0755'
 
-
-    - name: Create log directory for Spring Boot application
+    - name: Create log dir
       ansible.builtin.file:
-        path: "/var/log/{{ app_user }}" # This will be /var/log/configsrv
+        path: "/var/log/{{ app_user }}"
         state: directory
         owner: "{{ app_user }}"
         group: "{{ app_group }}"
-        mode: '0750' # Owner rwx, group rx, others no access
+        mode: '0750'
 
-    - name: Template Spring Boot systemd service file
+    - name: Deploy config‐server systemd unit
       ansible.builtin.template:
-        src: ../templates/spring-boot-config-server.service.j2 # Ensure this has --spring.config.additional-location
+        src: ../templates/spring-boot-config-server.service.j2
         dest: /etc/systemd/system/spring-boot-config-server.service
-        owner: root
-        group: root
         mode: '0644'
       notify: Reload systemd for config server
 
-    - name: Ensure Spring Boot config server service is enabled
+    - name: Enable config‐server
       ansible.builtin.systemd:
         name: spring-boot-config-server
         enabled: yes
-        daemon_reload: yes # Reload if service file changed
+        daemon_reload: yes
 
-    # Section 2: Prometheus Node Exporter Setup
+    # -------- Node Exporter --------
     - name: Create group for Node Exporter
       ansible.builtin.group:
         name: "{{ node_exporter_group }}"
-        state: present
 
     - name: Create user for Node Exporter
       ansible.builtin.user:
         name: "{{ node_exporter_user }}"
         group: "{{ node_exporter_group }}"
         shell: /bin/false
-        create_home: false
         system: yes
-        state: present
 
-    - name: Create temporary directory for Node Exporter download
-      ansible.builtin.file:
-        path: /tmp/node_exporter_download
-        state: directory
-        mode: '0755'
-
-    - name: Download Node Exporter archive (without checksum)
+    - name: Download Node Exporter
       ansible.builtin.get_url:
         url: "{{ node_exporter_download_url }}"
-        dest: "/tmp/node_exporter_download/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
-        mode: '0644'
+        dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
 
     - name: Unarchive Node Exporter
       ansible.builtin.unarchive:
-        src: "/tmp/node_exporter_download/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
-        dest: /tmp/ # Extracts to /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+        dest: /tmp
         remote_src: yes
-        creates: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
 
-    - name: Copy Node Exporter binary to /usr/local/bin
+    - name: Install Node Exporter binary
       ansible.builtin.copy:
         src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
         dest: /usr/local/bin/node_exporter
-        owner: root
-        group: root
         mode: '0755'
-        remote_src: yes
-      notify: Restart node_exporter
 
-    - name: Template Node Exporter systemd service file
+    - name: Deploy node_exporter unit
       ansible.builtin.template:
         src: ../templates/node_exporter.service.j2
         dest: /etc/systemd/system/node_exporter.service
-        owner: root
-        group: root
         mode: '0644'
       notify: Reload systemd and restart node_exporter
 
-    - name: Ensure Node Exporter service is enabled and started
+    - name: Enable & start node_exporter
       ansible.builtin.systemd:
         name: node_exporter
         enabled: yes
         state: started
         daemon_reload: yes
 
-    - name: Clean up Node Exporter downloaded archive and temp directory
+    - name: Cleanup Node Exporter temp
       ansible.builtin.file:
-        path: /tmp/node_exporter_download
+        path: "/tmp/node_exporter-{{ node_exporter_version }}*"
         state: absent
-      when: true
+        recurse: yes
 
-    - name: Clean up Node Exporter extracted folder
-      ansible.builtin.file:
-        path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
-        state: absent
-      when: true
-
-    # Section 3: Jenkins Deployment User Setup
-    - name: Create group for Jenkins deployer user
+    # -------- Jenkins Deployer --------
+    - name: Create Jenkins deployer group
       ansible.builtin.group:
         name: "{{ jenkins_deployer_group }}"
-        state: present
 
     - name: Create Jenkins deployer user
       ansible.builtin.user:
@@ -166,58 +177,41 @@
         group: "{{ jenkins_deployer_group }}"
         shell: /bin/bash
         create_home: yes
-        state: present
 
-    - name: Set up authorized_keys for Jenkins deployer user
+    - name: Install Jenkins deployer SSH key
       ansible.posix.authorized_key:
         user: "{{ jenkins_deployer_user }}"
-        state: present
         key: "{{ jenkins_yensid_deployer_ssh_public_key_content }}"
-        exclusive: no
 
-    - name: Configure passwordless sudo for Jenkins deployer user (specific commands)
-      ansible.builtin.lineinfile:
-        path: /etc/sudoers.d/95-yensid-deployer
-        line: "{{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: {{ item }}"
-        create: yes
-        owner: root
-        group: root
+    - name: Grant Jenkins deployer NOPASSWD sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/95-yensid-deployer
+        content: |
+          {{ jenkins_deployer_user }} ALL=(ALL) NOPASSWD: \
+            /usr/bin/systemctl, \
+            /usr/bin/mv, \
+            /usr/bin/chown, \
+            /usr/bin/chmod, \
+            /usr/bin/mkdir
         mode: '0440'
-        validate: /usr/sbin/visudo -cf %s
-      loop:
-        - "/usr/bin/systemctl stop spring-boot-config-server"
-        - "/usr/bin/systemctl start spring-boot-config-server"
-        - "/usr/bin/systemctl daemon-reload"
-        - "/usr/bin/systemctl status spring-boot-config-server"
-        - "/usr/bin/mv /tmp/config-server-*.jar {{ app_dir }}/{{ app_jar_name }}"
-        - "/usr/bin/mv /tmp/application-dynamic.properties.tmp {{ app_dir }}/application-dynamic.properties"
-        - "/usr/bin/chown"  # Generic chown, Jenkins pipeline will supply arguments like -R user:group /path
-        - "/usr/bin/chmod 644 {{ app_dir }}/{{ app_jar_name }}"
-        - "/usr/bin/chmod 640 {{ app_dir }}/application-dynamic.properties"
-        - "/usr/bin/mkdir" # Allows mkdir with any arguments (like -p)
-        # Add other commands if needed by Jenkins deployment script:
-        # - "/usr/bin/rm" # If Jenkins needs to sudo rm files from /tmp on Yensid
 
-    # Section 4: Firewall Configuration
+    # -------- Firewall --------
     - name: Allow SSH
       community.general.ufw:
         rule: allow
         name: OpenSSH
-        state: enabled
 
-    - name: Allow Spring Boot Config Server port
+    - name: Allow config‐server port
       community.general.ufw:
         rule: allow
         port: "{{ app_port }}"
         proto: tcp
-        state: enabled
 
-    - name: Allow Node Exporter port
+    - name: Allow node_exporter port
       community.general.ufw:
         rule: allow
         port: "{{ node_exporter_port }}"
         proto: tcp
-        state: enabled
 
     - name: Enable UFW
       community.general.ufw:
@@ -225,10 +219,9 @@
 
   handlers:
     - name: Reload systemd for config server
-      listen: Reload systemd and restart config server # Handles old notify name too
       ansible.builtin.systemd:
         name: spring-boot-config-server
-        state: restarted # This will restart if notified.
+        state: restarted
         daemon_reload: yes
 
     - name: Reload systemd and restart node_exporter
@@ -236,8 +229,3 @@
         name: node_exporter
         state: restarted
         daemon_reload: yes
-
-    - name: Restart node_exporter
-      ansible.builtin.systemd:
-        name: node_exporter
-        state: restarted
