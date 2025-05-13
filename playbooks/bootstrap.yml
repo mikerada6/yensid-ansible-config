@@ -2,7 +2,14 @@
 - name: Bootstrap remote hosts with a dedicated control user
   hosts: bootstrap
   become: yes
+
   vars:
+    # derive a filesystem‐safe key‐basename from the hostname
+    keybase: "{{ inventory_hostname | replace('-', '_') }}_ansible"
+    bootstrap_public_key: "{{ lookup('env','HOME') + '/.ssh/' + keybase + '.pub' }}"
+    bootstrap_user: ansible
+    bootstrap_group: ansible
+    bootstrap_shell: /bin/bash
     ssh_dir: "/home/{{ bootstrap_user }}/.ssh"
 
   tasks:
@@ -17,7 +24,6 @@
         group: "{{ bootstrap_group }}"
         shell: "{{ bootstrap_shell }}"
         create_home: yes
-        state: present
 
     - name: Ensure {{ ssh_dir }} is present
       ansible.builtin.file:
@@ -37,6 +43,4 @@
       ansible.builtin.copy:
         dest: "/etc/sudoers.d/{{ bootstrap_user }}"
         content: "{{ bootstrap_user }} ALL=(ALL) NOPASSWD:ALL"
-        owner: root
-        group: root
         mode: '0440'
