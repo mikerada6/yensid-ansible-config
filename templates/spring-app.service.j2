@@ -8,12 +8,14 @@ User={{ app_user }}
 Group={{ app_group }}
 WorkingDirectory=/opt/{{ svc_name }}
 Environment="SPRING_CLOUD_CONFIG_URI={{ config_server_uri }}"
+
+# Redirect both stdout and stderr into your per-app log directory
+# (make sure /var/log/{{ svc_name }} exists & is writable by {{ app_user }} or its group)
 ExecStart=/usr/bin/java -jar /opt/{{ svc_name }}/{{ jar_name }} \
   --server.port={{ svc_port }} \
-  --spring.profiles.active={{ spring_active_profile }}
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier={{ svc_name }}
+  --spring.profiles.active={{ spring_active_profile }} \
+  >> /var/log/{{ svc_name }}/{{ svc_name }}.log 2>&1
+
 Restart=always
 RestartSec=5
 

@@ -1,13 +1,37 @@
 ---
 # invoked via include_tasks, loop_var=app
 
+# Ensure Jenkins deployer group exists
+- name: Ensure group for Jenkins deployer
+  ansible.builtin.group:
+    name: "{{ jenkins_deployer_group }}"
+    state: present
+    system: yes
+
+# Ensure Jenkins deployer user exists and is in the app_group
+- name: Ensure Jenkins deployer user
+  ansible.builtin.user:
+    name: "{{ jenkins_deployer_user }}"
+    group: "{{ jenkins_deployer_group }}"
+    groups: "{{ app_group }}"
+    append: yes
+    create_home: yes
+    shell: /bin/bash
+    system: yes
+
+# Add SSH key for Jenkins deployer
+- name: Authorize SSH key for Jenkins deployer
+  ansible.builtin.authorized_key:
+    user: "{{ jenkins_deployer_user }}"
+    key: "{{ jenkins_yensid_deployer_ssh_public_key_content }}"
+
 - name: Create application directory
   ansible.builtin.file:
     path: "/opt/{{ app.name }}"
     state: directory
     owner: "{{ app_user }}"
     group: "{{ app_group }}"
-    mode: '0755'
+    mode: '2775'       # make directory group-writable and setgid so files inherit group
 
 - name: Create log directory
   ansible.builtin.file:
@@ -35,7 +59,7 @@
   ansible.builtin.systemd:
     name: "{{ app.name }}"
     state: restarted
-  ignore_errors: true  # first-deploy may not be running yet
+  ignore_errors: true      # first-deploy may not be running yet
 
 - name: Ensure {{ app.name }} is enabled
   ansible.builtin.systemd:
