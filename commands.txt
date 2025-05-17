@@ -1,3 +1,5 @@
 ansible-playbook playbooks/setup_yensid.yml --limit yensid_server
 
+ansible-playbook playbooks/springapps-with-metrics.yml --limit dev
+
 ansible-playbook -i inventory.ini playbooks/bootstrap.yml -kK
